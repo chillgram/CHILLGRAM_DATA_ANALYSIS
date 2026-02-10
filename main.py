@@ -336,6 +336,10 @@ def generate_dashboard_html(analysis: dict) -> str:
     def blockquote_items(items):
         return "\n".join(f'<blockquote>"{item}"</blockquote>' for item in items)
 
+    # 리뷰 수 (분석에 포함된 리뷰 수)
+    review_count = len(pos_reviews) + len(neg_reviews)
+    total_keywords = sum(pos_kw_freq) + sum(neg_kw_freq)
+
     html = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -345,179 +349,138 @@ def generate_dashboard_html(analysis: dict) -> str:
     <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
-        @page {{
-            size: A4;
-            margin: 0;
-        }}
+        @page {{ size: A4 landscape; margin: 0; }}
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         html, body {{
             font-family: 'Noto Sans KR', sans-serif;
             background: #1a1a2e;
-            min-height: 100vh; color: #fff;
+            width: 1122px; height: 793px;
+            color: #fff; overflow: hidden;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }}
-        body {{ padding: 24px; }}
-        .container {{ max-width: 100%; margin: 0 auto; }}
-        .header {{ text-align: center; padding: 30px 0 24px; }}
+        body {{ padding: 20px 24px; }}
+        .container {{ width: 100%; height: 100%; display: flex; flex-direction: column; }}
+
+        /* 헤더 */
+        .header {{ text-align: center; padding: 10px 0 8px; }}
         .header h1 {{
-            font-size: 2rem; font-weight: 700;
+            font-size: 1.5rem; font-weight: 700;
             background: linear-gradient(90deg, #6366F1, #8B5CF6, #EC4899);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-            margin-bottom: 8px;
         }}
-        .header p {{ color: #94A3B8; font-size: 0.95rem; }}
-        .section {{
-            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 16px; padding: 22px; margin-bottom: 20px;
+        .header p {{ color: #94A3B8; font-size: 0.75rem; margin-top: 2px; }}
+
+        /* 상품명 + 감성점수 바 */
+        .product-bar {{
+            display: flex; align-items: center; gap: 12px;
+            padding: 8px 0 6px;
+            border-bottom: 2px solid rgba(99,102,241,0.3);
+            margin-bottom: 10px;
         }}
-        .section-title {{
-            font-size: 1.2rem; font-weight: 600; margin-bottom: 16px;
-            padding-bottom: 10px; border-bottom: 2px solid rgba(99,102,241,0.3);
-        }}
-        .charts-grid {{
-            display: flex; flex-direction: column; gap: 16px;
-        }}
-        .chart-box {{
-            background: rgba(255,255,255,0.02); border-radius: 14px;
-            padding: 16px; border: 1px solid rgba(255,255,255,0.05);
-            min-height: 300px;
-            break-inside: avoid; page-break-inside: avoid;
-        }}
-        .chart-label {{ font-size: 1rem; font-weight: 500; margin-bottom: 10px; color: #E2E8F0; }}
-        .insights-grid {{
-            display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
-        }}
-        .insight-card {{
-            background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2);
-            border-radius: 12px; padding: 16px;
-            break-inside: avoid; page-break-inside: avoid;
-        }}
-        .insight-card.green {{ background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); }}
-        .insight-card.red {{ background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); }}
-        .insight-card.yellow {{ background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.3); }}
-        .insight-label {{
-            font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
-            letter-spacing: 0.5px; margin-bottom: 8px; color: #A5B4FC;
-        }}
-        .insight-card.green .insight-label {{ color: #10B981; }}
-        .insight-card.red .insight-label {{ color: #EF4444; }}
-        .insight-card.yellow .insight-label {{ color: #F59E0B; }}
-        ul {{ list-style: none; }}
-        ul li {{
-            padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
-            font-size: 0.88rem; color: #CBD5E1; line-height: 1.5;
-        }}
-        ul li:last-child {{ border-bottom: none; }}
-        ul li::before {{ content: "→ "; color: #6366F1; }}
-        blockquote {{
-            background: rgba(255,255,255,0.03); border-left: 3px solid #6366F1;
-            padding: 10px 14px; margin: 8px 0; border-radius: 0 8px 8px 0;
-            font-size: 0.85rem; color: #94A3B8; font-style: italic;
-        }}
+        .product-bar h2 {{ font-size: 1.05rem; font-weight: 600; }}
         .score-badge {{
-            display: inline-block; padding: 6px 14px; border-radius: 20px;
-            font-weight: 600; font-size: 1.1rem;
+            display: inline-block; padding: 4px 14px; border-radius: 16px;
+            font-weight: 600; font-size: 0.85rem;
         }}
         .score-high {{ background: linear-gradient(135deg, #10B981, #059669); }}
         .score-medium {{ background: linear-gradient(135deg, #F59E0B, #D97706); }}
         .score-low {{ background: linear-gradient(135deg, #EF4444, #DC2626); }}
-        .summary-box {{
-            background: rgba(99,102,241,0.08); border-radius: 12px;
-            padding: 16px; margin-bottom: 14px;
+
+        /* 차트 3열 그리드 */
+        .charts-row {{
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+            flex: 1; min-height: 0;
         }}
-        .summary-box p {{ color: #CBD5E1; line-height: 1.7; font-size: 0.9rem; }}
+        .chart-box {{
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px; padding: 10px;
+            display: flex; flex-direction: column;
+        }}
+        .chart-label {{
+            font-size: 0.8rem; font-weight: 500; color: #E2E8F0;
+            margin-bottom: 4px; display: flex; align-items: center; gap: 6px;
+        }}
+        .chart-inner {{ flex: 1; min-height: 0; }}
+
+        /* 인사이트 3열 */
+        .insights-row {{
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+            margin-top: 10px;
+        }}
+        .insight-card {{
+            background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 10px; padding: 10px;
+        }}
+        .insight-card.purple {{ background: rgba(99,102,241,0.1); border-color: rgba(99,102,241,0.3); }}
+        .insight-card.green {{ background: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.3); }}
+        .insight-card.red {{ background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.3); }}
+        .insight-label {{
+            font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.5px; margin-bottom: 6px;
+        }}
+        .insight-card.purple .insight-label {{ color: #A5B4FC; }}
+        .insight-card.green .insight-label {{ color: #10B981; }}
+        .insight-card.red .insight-label {{ color: #EF4444; }}
+        ul {{ list-style: none; }}
+        ul li {{
+            padding: 3px 0; font-size: 0.72rem; color: #CBD5E1; line-height: 1.4;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }}
+        ul li:last-child {{ border-bottom: none; }}
+        ul li::before {{ content: "→ "; color: #6366F1; }}
+
         .footer {{
-            text-align: center; padding: 24px 0; color: #64748B; font-size: 0.8rem;
-        }}
-        .page-break {{
-            break-before: page; page-break-before: always;
+            text-align: center; padding: 6px 0 0; color: #64748B; font-size: 0.6rem;
         }}
     </style>
 </head>
 <body>
 <div class="container">
     <div class="header">
-        <h1>{product_name} 리뷰 분석 리포트</h1>
-        <p>Vertex AI Gemini 2.5 Flash 기반 분석</p>
+        <h1>리뷰 분석 대시보드</h1>
+        <p>BigQuery + Vertex AI Gemini 2.5 Flash 분석 결과</p>
     </div>
 
-    <!-- 감성 분석 요약 -->
-    <div class="section">
-        <div class="section-title">
-            감성 분석
-            <span class="score-badge {score_class}" style="margin-left:16px;">감성 점수: {score}</span>
-        </div>
-        <p style="color:#94A3B8;margin-bottom:14px;">{sentiment.get("sentiment_trend_summary", "")}</p>
-        <div class="summary-box">
-            <p>{"<br>".join(summary_lines)}</p>
-        </div>
-        <div class="chart-box" style="margin-top:14px;">
+    <div class="product-bar">
+        <h2>{product_name}</h2>
+        <span class="score-badge {score_class}">감성 점수: {score}</span>
+    </div>
+
+    <!-- 차트 3열: 감성분포 | 긍정키워드 | 부정키워드 -->
+    <div class="charts-row">
+        <div class="chart-box">
             <div class="chart-label">감성 분포</div>
-            <div id="sentiment-chart" style="height:280px;"></div>
+            <div class="chart-inner" id="sentiment-chart"></div>
         </div>
-    </div>
-
-    <!-- 키워드 차트 (새 페이지) -->
-    <div class="section page-break">
-        <div class="section-title">키워드 분석</div>
         <div class="chart-box">
             <div class="chart-label">긍정 키워드 TOP 10</div>
-            <div id="pos-keywords" style="height:320px;"></div>
+            <div class="chart-inner" id="pos-keywords"></div>
         </div>
-        <div class="chart-box" style="margin-top:16px;">
+        <div class="chart-box">
             <div class="chart-label">부정 키워드 TOP 10</div>
-            <div id="neg-keywords" style="height:320px;"></div>
+            <div class="chart-inner" id="neg-keywords"></div>
         </div>
     </div>
 
-    <!-- 대표 리뷰 (새 페이지) -->
-    <div class="section page-break">
-        <div class="section-title">대표 리뷰</div>
-        <div class="insight-card green" style="margin-bottom:14px;">
-            <div class="insight-label">긍정 리뷰</div>
-            {blockquote_items(pos_reviews)}
+    <!-- 인사이트 3열 -->
+    <div class="insights-row">
+        <div class="insight-card purple">
+            <div class="insight-label">마케팅 활용 포인트</div>
+            <ul>{li_items(marketing)}</ul>
+        </div>
+        <div class="insight-card green">
+            <div class="insight-label">고객 만족 포인트</div>
+            <ul>{li_items(satisfaction)}</ul>
         </div>
         <div class="insight-card red">
-            <div class="insight-label">부정 리뷰</div>
-            {blockquote_items(neg_reviews)}
-        </div>
-    </div>
-
-    <!-- 인사이트 (새 페이지) -->
-    <div class="section page-break">
-        <div class="section-title">인사이트 & 액션 아이템</div>
-        <div class="insights-grid">
-            <div class="insight-card green">
-                <div class="insight-label">고객 만족 포인트</div>
-                <ul>{li_items(satisfaction)}</ul>
-            </div>
-            <div class="insight-card red">
-                <div class="insight-label">개선 필요 사항</div>
-                <ul>{li_items(dissatisfaction)}</ul>
-            </div>
-            <div class="insight-card">
-                <div class="insight-label">개선 제안</div>
-                <ul>{li_items(improvements)}</ul>
-            </div>
-            <div class="insight-card green">
-                <div class="insight-label">마케팅 활용 포인트</div>
-                <ul>{li_items(marketing)}</ul>
-            </div>
-            <div class="insight-card yellow">
-                <div class="insight-label">즉시 개선 항목</div>
-                <ul>{li_items(immediate)}</ul>
-            </div>
-            <div class="insight-card">
-                <div class="insight-label">마케팅 메시지</div>
-                <ul>{li_items(marketing_msg)}</ul>
-            </div>
+            <div class="insight-label">개선 필요 사항</div>
+            <ul>{li_items(dissatisfaction)}</ul>
         </div>
     </div>
 
     <div class="footer">
-        <p>Generated by BigQuery + Vertex AI Gemini 2.5 Flash</p>
-        <p>CHILLGRAM Review Analysis</p>
+        <p>CHILLGRAM Review Analysis &middot; Generated by Vertex AI</p>
     </div>
 </div>
 
@@ -527,14 +490,14 @@ Plotly.newPlot('sentiment-chart', [{{
     labels: ['긍정 ({positive}%)', '중립 ({neutral}%)', '부정 ({negative}%)'],
     type: 'pie', hole: 0.55,
     marker: {{ colors: ['#10B981', '#F59E0B', '#EF4444'] }},
-    textinfo: 'label', textfont: {{ color: '#fff', size: 12 }},
+    textinfo: 'label', textfont: {{ color: '#fff', size: 10 }},
     hoverinfo: 'label+percent'
 }}], {{
     paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
     font: {{ color: '#fff' }}, showlegend: false,
-    margin: {{ t: 20, b: 20, l: 20, r: 20 }},
-    annotations: [{{ text: '<b>{score}</b>', font: {{ size: 22, color: '#fff' }}, showarrow: false }}]
-}}, {{responsive: true}});
+    margin: {{ t: 10, b: 10, l: 10, r: 10 }},
+    annotations: [{{ text: '<b>{score}</b>', font: {{ size: 20, color: '#fff' }}, showarrow: false }}]
+}}, {{responsive: true, displayModeBar: false}});
 
 Plotly.newPlot('pos-keywords', [{{
     x: {json.dumps(pos_kw_freq[::-1])},
@@ -542,14 +505,14 @@ Plotly.newPlot('pos-keywords', [{{
     type: 'bar', orientation: 'h',
     marker: {{ color: 'rgba(16,185,129,0.8)', line: {{ color: '#10B981', width: 1 }} }},
     text: {json.dumps(pos_kw_freq[::-1])}, textposition: 'outside',
-    textfont: {{ color: '#10B981', size: 11 }}
+    textfont: {{ color: '#10B981', size: 9 }}
 }}], {{
     paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
     font: {{ color: '#CBD5E1' }},
     xaxis: {{ showgrid: false, zeroline: false, showticklabels: false }},
-    yaxis: {{ showgrid: false, tickfont: {{ size: 11 }} }},
-    margin: {{ t: 10, b: 20, l: 70, r: 40 }}, bargap: 0.25
-}}, {{responsive: true}});
+    yaxis: {{ showgrid: false, tickfont: {{ size: 9 }} }},
+    margin: {{ t: 5, b: 5, l: 55, r: 30 }}, bargap: 0.2
+}}, {{responsive: true, displayModeBar: false}});
 
 Plotly.newPlot('neg-keywords', [{{
     x: {json.dumps(neg_kw_freq[::-1])},
@@ -557,14 +520,14 @@ Plotly.newPlot('neg-keywords', [{{
     type: 'bar', orientation: 'h',
     marker: {{ color: 'rgba(239,68,68,0.8)', line: {{ color: '#EF4444', width: 1 }} }},
     text: {json.dumps(neg_kw_freq[::-1])}, textposition: 'outside',
-    textfont: {{ color: '#EF4444', size: 11 }}
+    textfont: {{ color: '#EF4444', size: 9 }}
 }}], {{
     paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
     font: {{ color: '#CBD5E1' }},
     xaxis: {{ showgrid: false, zeroline: false, showticklabels: false }},
-    yaxis: {{ showgrid: false, tickfont: {{ size: 11 }} }},
-    margin: {{ t: 10, b: 20, l: 70, r: 40 }}, bargap: 0.25
-}}, {{responsive: true}});
+    yaxis: {{ showgrid: false, tickfont: {{ size: 9 }} }},
+    margin: {{ t: 5, b: 5, l: 55, r: 30 }}, bargap: 0.2
+}}, {{responsive: true, displayModeBar: false}});
 </script>
 </body>
 </html>"""
@@ -581,6 +544,7 @@ async def html_to_pdf(html_content: str) -> bytes:
         # Plotly 차트 렌더링 대기
         await page.wait_for_timeout(3000)
         pdf_bytes = await page.pdf(
+            landscape=True,
             format="A4",
             print_background=True,
             margin={"top": "0", "bottom": "0", "left": "0", "right": "0"},
