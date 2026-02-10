@@ -334,65 +334,75 @@ def generate_dashboard_html(analysis: dict) -> str:
     <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            font-family: 'Noto Sans KR', sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            min-height: 100vh; color: #fff; padding: 20px;
+        @page {{
+            size: A4;
+            margin: 0;
         }}
-        .container {{ max-width: 1200px; margin: 0 auto; }}
-        .header {{ text-align: center; padding: 40px 0 30px; }}
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        html, body {{
+            font-family: 'Noto Sans KR', sans-serif;
+            background: #1a1a2e;
+            min-height: 100vh; color: #fff;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }}
+        body {{ padding: 24px; }}
+        .container {{ max-width: 100%; margin: 0 auto; }}
+        .header {{ text-align: center; padding: 30px 0 24px; }}
         .header h1 {{
-            font-size: 2.2rem; font-weight: 700;
+            font-size: 2rem; font-weight: 700;
             background: linear-gradient(90deg, #6366F1, #8B5CF6, #EC4899);
             -webkit-background-clip: text; -webkit-text-fill-color: transparent;
             margin-bottom: 8px;
         }}
-        .header p {{ color: #94A3B8; font-size: 1rem; }}
+        .header p {{ color: #94A3B8; font-size: 0.95rem; }}
         .section {{
             background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 20px; padding: 28px; margin-bottom: 28px;
+            border-radius: 16px; padding: 22px; margin-bottom: 20px;
         }}
         .section-title {{
-            font-size: 1.3rem; font-weight: 600; margin-bottom: 20px;
-            padding-bottom: 12px; border-bottom: 2px solid rgba(99,102,241,0.3);
+            font-size: 1.2rem; font-weight: 600; margin-bottom: 16px;
+            padding-bottom: 10px; border-bottom: 2px solid rgba(99,102,241,0.3);
         }}
         .charts-grid {{
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px;
+            display: flex; flex-direction: column; gap: 16px;
         }}
         .chart-box {{
             background: rgba(255,255,255,0.02); border-radius: 14px;
-            padding: 18px; border: 1px solid rgba(255,255,255,0.05); min-height: 320px;
+            padding: 16px; border: 1px solid rgba(255,255,255,0.05);
+            min-height: 300px;
+            break-inside: avoid; page-break-inside: avoid;
         }}
-        .chart-label {{ font-size: 1rem; font-weight: 500; margin-bottom: 12px; color: #E2E8F0; }}
+        .chart-label {{ font-size: 1rem; font-weight: 500; margin-bottom: 10px; color: #E2E8F0; }}
         .insights-grid {{
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
         }}
         .insight-card {{
             background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2);
-            border-radius: 12px; padding: 18px;
+            border-radius: 12px; padding: 16px;
+            break-inside: avoid; page-break-inside: avoid;
         }}
         .insight-card.green {{ background: rgba(16,185,129,0.1); border-color: rgba(16,185,129,0.3); }}
         .insight-card.red {{ background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); }}
         .insight-card.yellow {{ background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.3); }}
         .insight-label {{
-            font-size: 0.85rem; font-weight: 600; text-transform: uppercase;
-            letter-spacing: 0.5px; margin-bottom: 10px; color: #A5B4FC;
+            font-size: 0.8rem; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.5px; margin-bottom: 8px; color: #A5B4FC;
         }}
         .insight-card.green .insight-label {{ color: #10B981; }}
         .insight-card.red .insight-label {{ color: #EF4444; }}
         .insight-card.yellow .insight-label {{ color: #F59E0B; }}
         ul {{ list-style: none; }}
         ul li {{
-            padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
-            font-size: 0.93rem; color: #CBD5E1; line-height: 1.6;
+            padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.88rem; color: #CBD5E1; line-height: 1.5;
         }}
         ul li:last-child {{ border-bottom: none; }}
         ul li::before {{ content: "→ "; color: #6366F1; }}
         blockquote {{
             background: rgba(255,255,255,0.03); border-left: 3px solid #6366F1;
             padding: 10px 14px; margin: 8px 0; border-radius: 0 8px 8px 0;
-            font-size: 0.9rem; color: #94A3B8; font-style: italic;
+            font-size: 0.85rem; color: #94A3B8; font-style: italic;
         }}
         .score-badge {{
             display: inline-block; padding: 6px 14px; border-radius: 20px;
@@ -403,11 +413,14 @@ def generate_dashboard_html(analysis: dict) -> str:
         .score-low {{ background: linear-gradient(135deg, #EF4444, #DC2626); }}
         .summary-box {{
             background: rgba(99,102,241,0.08); border-radius: 12px;
-            padding: 18px; margin-bottom: 18px;
+            padding: 16px; margin-bottom: 14px;
         }}
-        .summary-box p {{ color: #CBD5E1; line-height: 1.8; font-size: 0.95rem; }}
+        .summary-box p {{ color: #CBD5E1; line-height: 1.7; font-size: 0.9rem; }}
         .footer {{
-            text-align: center; padding: 30px 0; color: #64748B; font-size: 0.85rem;
+            text-align: center; padding: 24px 0; color: #64748B; font-size: 0.8rem;
+        }}
+        .page-break {{
+            break-before: page; page-break-before: always;
         }}
     </style>
 </head>
@@ -415,52 +428,53 @@ def generate_dashboard_html(analysis: dict) -> str:
 <div class="container">
     <div class="header">
         <h1>{product_name} 리뷰 분석 리포트</h1>
-        <p>Vertex AI Gemini 2.5 Flash | {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+        <p>Vertex AI Gemini 2.5 Flash 기반 분석</p>
     </div>
 
-    <!-- 감성 점수 & 요약 -->
+    <!-- 감성 분석 요약 -->
     <div class="section">
         <div class="section-title">
             감성 분석
             <span class="score-badge {score_class}" style="margin-left:16px;">감성 점수: {score}</span>
         </div>
-        <p style="color:#94A3B8;margin-bottom:16px;">{sentiment.get("sentiment_trend_summary", "")}</p>
+        <p style="color:#94A3B8;margin-bottom:14px;">{sentiment.get("sentiment_trend_summary", "")}</p>
         <div class="summary-box">
             <p>{"<br>".join(summary_lines)}</p>
         </div>
-        <div class="charts-grid">
-            <div class="chart-box">
-                <div class="chart-label">감성 분포</div>
-                <div id="sentiment-chart" style="height:280px;"></div>
-            </div>
-            <div class="chart-box">
-                <div class="chart-label">긍정 키워드 TOP 10</div>
-                <div id="pos-keywords" style="height:280px;"></div>
-            </div>
-            <div class="chart-box">
-                <div class="chart-label">부정 키워드 TOP 10</div>
-                <div id="neg-keywords" style="height:280px;"></div>
-            </div>
+        <div class="chart-box" style="margin-top:14px;">
+            <div class="chart-label">감성 분포</div>
+            <div id="sentiment-chart" style="height:280px;"></div>
         </div>
     </div>
 
-    <!-- 대표 리뷰 -->
-    <div class="section">
+    <!-- 키워드 차트 (새 페이지) -->
+    <div class="section page-break">
+        <div class="section-title">키워드 분석</div>
+        <div class="chart-box">
+            <div class="chart-label">긍정 키워드 TOP 10</div>
+            <div id="pos-keywords" style="height:320px;"></div>
+        </div>
+        <div class="chart-box" style="margin-top:16px;">
+            <div class="chart-label">부정 키워드 TOP 10</div>
+            <div id="neg-keywords" style="height:320px;"></div>
+        </div>
+    </div>
+
+    <!-- 대표 리뷰 (새 페이지) -->
+    <div class="section page-break">
         <div class="section-title">대표 리뷰</div>
-        <div class="charts-grid">
-            <div class="insight-card green">
-                <div class="insight-label">긍정 리뷰</div>
-                {blockquote_items(pos_reviews)}
-            </div>
-            <div class="insight-card red">
-                <div class="insight-label">부정 리뷰</div>
-                {blockquote_items(neg_reviews)}
-            </div>
+        <div class="insight-card green" style="margin-bottom:14px;">
+            <div class="insight-label">긍정 리뷰</div>
+            {blockquote_items(pos_reviews)}
+        </div>
+        <div class="insight-card red">
+            <div class="insight-label">부정 리뷰</div>
+            {blockquote_items(neg_reviews)}
         </div>
     </div>
 
-    <!-- 인사이트 -->
-    <div class="section">
+    <!-- 인사이트 (새 페이지) -->
+    <div class="section page-break">
         <div class="section-title">인사이트 & 액션 아이템</div>
         <div class="insights-grid">
             <div class="insight-card green">
@@ -492,7 +506,7 @@ def generate_dashboard_html(analysis: dict) -> str:
 
     <div class="footer">
         <p>Generated by BigQuery + Vertex AI Gemini 2.5 Flash</p>
-        <p>CHILLGRAM Review Analysis | {datetime.now().strftime('%Y-%m-%d')}</p>
+        <p>CHILLGRAM Review Analysis</p>
     </div>
 </div>
 
@@ -558,7 +572,7 @@ async def html_to_pdf(html_content: str) -> bytes:
         pdf_bytes = await page.pdf(
             format="A4",
             print_background=True,
-            margin={"top": "10mm", "bottom": "10mm", "left": "10mm", "right": "10mm"},
+            margin={"top": "0", "bottom": "0", "left": "0", "right": "0"},
         )
         await browser.close()
     return pdf_bytes
@@ -586,6 +600,32 @@ def get_pdf_from_gcs(product_id: str) -> bytes | None:
     latest = sorted(blobs, key=lambda b: b.name, reverse=True)[0]
     logger.info(f"GCS 조회: {latest.name}")
     return latest.download_as_bytes()
+
+
+def save_analysis_to_gcs(product_id: str, analysis: dict) -> str:
+    """분석 결과 JSON을 GCS에 저장합니다."""
+    client = storage.Client(project=PROJECT_ID)
+    bucket = client.bucket(GCS_BUCKET)
+    blob_path = f"analysis/{product_id}/{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    blob = bucket.blob(blob_path)
+    blob.upload_from_string(
+        json.dumps(analysis, ensure_ascii=False, indent=2),
+        content_type="application/json",
+    )
+    logger.info(f"분석 JSON 저장 완료: gs://{GCS_BUCKET}/{blob_path}")
+    return blob_path
+
+
+def get_analysis_from_gcs(product_id: str) -> dict | None:
+    """GCS에서 최신 분석 JSON을 가져옵니다."""
+    client = storage.Client(project=PROJECT_ID)
+    bucket = client.bucket(GCS_BUCKET)
+    blobs = list(bucket.list_blobs(prefix=f"analysis/{product_id}/"))
+    if not blobs:
+        return None
+    latest = sorted(blobs, key=lambda b: b.name, reverse=True)[0]
+    logger.info(f"분석 JSON 조회: {latest.name}")
+    return json.loads(latest.download_as_string())
 
 
 # ==================== 프록시 & Xvfb (run_crawler_test.py 방식) ====================
@@ -892,6 +932,10 @@ async def background_pipeline(product_id: str, coupang_url: str, max_reviews: in
         review_texts = [r["content"] for r in reviews]
         analysis = await asyncio.to_thread(analyze_with_vertex, product_name, review_texts)
 
+        # 3.5. 분석 JSON을 GCS에 중간 저장 (PDF 실패 시 여기서부터 재시작 가능)
+        logger.info(f"[PIPELINE] 분석 JSON 저장: {product_id}")
+        analysis_path = await asyncio.to_thread(save_analysis_to_gcs, product_id, analysis)
+
         # 4. 대시보드 HTML 생성
         set_status(product_id, "generating_pdf")
         logger.info(f"[PIPELINE] PDF 생성: {product_id}")
@@ -979,6 +1023,79 @@ async def analyze_product(request: Request):
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="analysis_{product_id}.pdf"'},
     )
+
+
+@app.post("/regenerate-pdf")
+async def regenerate_pdf(request: Request):
+    """저장된 분석 JSON으로 PDF만 재생성합니다. 크롤링/분석 없이 PDF만 다시 만듭니다."""
+    body = await request.json()
+    product_id = body.get("product_id", "")
+
+    if not product_id:
+        return {"status": "error", "message": "product_id가 필요합니다"}
+
+    # GCS에서 분석 JSON 가져오기
+    analysis = await asyncio.to_thread(get_analysis_from_gcs, product_id)
+    if not analysis:
+        return {"status": "error", "message": "저장된 분석 JSON이 없습니다. /reanalyze를 사용하세요."}
+
+    try:
+        set_status(product_id, "generating_pdf")
+        html = generate_dashboard_html(analysis)
+        pdf_bytes = await html_to_pdf(html)
+        pdf_path = await asyncio.to_thread(save_pdf_to_gcs, product_id, pdf_bytes)
+        set_status(product_id, "done", pdf_path=pdf_path)
+        logger.info(f"[REGENERATE] PDF 재생성 완료: {product_id}")
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="analysis_{product_id}.pdf"'},
+        )
+    except Exception as e:
+        set_status(product_id, "error", message=f"PDF 재생성 실패: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/reanalyze")
+async def reanalyze_product(request: Request):
+    """BigQuery에 저장된 리뷰로 Vertex AI 분석부터 재시작합니다. 크롤링 없이 분석+PDF를 다시 만듭니다."""
+    body = await request.json()
+    product_id = body.get("product_id", "")
+
+    if not product_id:
+        return {"status": "error", "message": "product_id가 필요합니다"}
+
+    # BigQuery에서 리뷰 가져오기
+    product_name, review_texts = await asyncio.to_thread(fetch_reviews_from_bigquery, product_id)
+    if not review_texts:
+        return {"status": "error", "message": "BigQuery에 리뷰 데이터가 없습니다. /register로 크롤링을 먼저 하세요."}
+
+    try:
+        # Vertex AI 분석
+        set_status(product_id, "analyzing")
+        analysis = await asyncio.to_thread(analyze_with_vertex, product_name, review_texts)
+
+        # 분석 JSON 저장
+        await asyncio.to_thread(save_analysis_to_gcs, product_id, analysis)
+
+        # PDF 생성
+        set_status(product_id, "generating_pdf")
+        html = generate_dashboard_html(analysis)
+        pdf_bytes = await html_to_pdf(html)
+        pdf_path = await asyncio.to_thread(save_pdf_to_gcs, product_id, pdf_bytes)
+
+        set_status(product_id, "done", pdf_path=pdf_path, review_count=len(review_texts))
+        logger.info(f"[REANALYZE] 재분석 완료: {product_id}")
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="analysis_{product_id}.pdf"'},
+        )
+    except Exception as e:
+        set_status(product_id, "error", message=f"재분석 실패: {e}")
+        return {"status": "error", "message": str(e)}
 
 
 @app.post("/crawl")
