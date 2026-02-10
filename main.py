@@ -235,16 +235,44 @@ def analyze_with_vertex(product_name: str, review_texts: list[str]) -> dict:
 
     response = model.generate_content(
         prompt,
-        generation_config={"temperature": 0.3, "max_output_tokens": 8192},
+        generation_config={
+            "temperature": 0.3,
+            "max_output_tokens": 8192,
+            "response_mime_type": "application/json",
+        },
     )
 
     raw_text = response.text.strip()
-    # JSON 블록 추출 (```json ... ``` 감싸져 있을 수 있음)
-    json_match = re.search(r"\{[\s\S]*\}", raw_text)
-    if json_match:
-        analysis = json.loads(json_match.group())
-    else:
-        raise ValueError(f"Gemini 응답에서 JSON을 파싱할 수 없습니다: {raw_text[:200]}")
+
+    # JSON 파싱 (여러 방법 시도)
+    analysis = None
+
+    # 1차: 그대로 파싱
+    try:
+        analysis = json.loads(raw_text)
+    except json.JSONDecodeError:
+        pass
+
+    # 2차: ```json ... ``` 블록 추출 후 파싱
+    if analysis is None:
+        json_match = re.search(r"```json\s*([\s\S]*?)```", raw_text)
+        if json_match:
+            try:
+                analysis = json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+    # 3차: { } 블록 추출 후 파싱
+    if analysis is None:
+        json_match = re.search(r"\{[\s\S]*\}", raw_text)
+        if json_match:
+            try:
+                analysis = json.loads(json_match.group())
+            except json.JSONDecodeError:
+                pass
+
+    if analysis is None:
+        raise ValueError(f"Gemini 응답에서 JSON을 파싱할 수 없습니다: {raw_text[:300]}")
 
     logger.info("Vertex AI 분석 완료")
     return analysis
