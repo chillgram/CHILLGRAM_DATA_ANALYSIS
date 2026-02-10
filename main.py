@@ -4,11 +4,21 @@ import json
 import uuid
 import asyncio
 import logging
+import time
+import os
+import socket
+import threading
+import base64
+import subprocess
 from datetime import datetime
 
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import Response
 from playwright.async_api import async_playwright
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import redis
 from google.cloud import bigquery, storage
 import vertexai
@@ -20,6 +30,13 @@ DATASET_ID = "raw"
 TABLE_ID = "crawl_events"
 GCS_BUCKET = "chillgram-deploy-analysis-pdfs"
 VERTEX_LOCATION = "us-central1"
+
+# 프록시 설정
+PROXY_HOST = "kr.decodo.com"
+PROXY_PORT = 10001
+PROXY_USER = "user-spjhm4tfwt-sessionduration-30"
+PROXY_PASS = "7bznkJZ07~y5xIkleP"
+LOCAL_PROXY_PORT = 18080  # 8080은 uvicorn이 사용하므로 다른 포트
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -543,123 +560,280 @@ def get_pdf_from_gcs(product_id: str) -> bytes | None:
     return latest.download_as_bytes()
 
 
-# ==================== 크롤링 (기존 로직 유지) ====================
-async def get_total_review_pages(page, max_reviews):
+# ==================== 프록시 & Xvfb (run_crawler_test.py 방식) ====================
+def setup_xvfb(display=":99"):
+    os.environ["DISPLAY"] = display
+    xvfb_proc = subprocess.Popen(
+        ["Xvfb", display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    time.sleep(1)
+    logger.info(f"Xvfb 가상 디스플레이 시작됨 (DISPLAY={display})")
+    return xvfb_proc
+
+
+def _pipe(src, dst):
     try:
-        count_span = await page.wait_for_selector("span.count", timeout=3000)
-        count_text = (await count_span.inner_text()).strip().replace(",", "")
-        match = re.search(r"(\d+)", count_text)
-        if match:
-            total_reviews = int(match.group(1))
-            original_reviews = total_reviews
-            total_reviews = min(total_reviews, max_reviews)
-            total_pages = math.ceil(total_reviews / 10)
-            logger.info(f"총 리뷰 수: {original_reviews}, 크롤링 대상: {total_reviews}, 페이지: {total_pages}")
-            return total_pages
+        while True:
+            data = src.recv(65536)
+            if not data:
+                break
+            dst.sendall(data)
     except Exception:
-        logger.error("리뷰 수를 찾을 수 없습니다.")
+        pass
+    finally:
+        try:
+            src.close()
+        except Exception:
+            pass
+        try:
+            dst.close()
+        except Exception:
+            pass
+
+
+def _handle_client(client_sock):
+    try:
+        request = b""
+        while b"\r\n\r\n" not in request:
+            chunk = client_sock.recv(4096)
+            if not chunk:
+                client_sock.close()
+                return
+            request += chunk
+
+        first_line = request.split(b"\r\n")[0].decode("utf-8", errors="replace")
+        method, target, _ = first_line.split(" ", 2)
+
+        upstream = socket.create_connection((PROXY_HOST, PROXY_PORT), timeout=15)
+        auth = base64.b64encode(f"{PROXY_USER}:{PROXY_PASS}".encode()).decode()
+
+        if method == "CONNECT":
+            connect_req = f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\nProxy-Authorization: Basic {auth}\r\nConnection: keep-alive\r\n\r\n"
+            upstream.sendall(connect_req.encode())
+
+            response = b""
+            while b"\r\n\r\n" not in response:
+                chunk = upstream.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+
+            if b"200" in response.split(b"\r\n")[0]:
+                client_sock.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                t1 = threading.Thread(target=_pipe, args=(client_sock, upstream), daemon=True)
+                t2 = threading.Thread(target=_pipe, args=(upstream, client_sock), daemon=True)
+                t1.start()
+                t2.start()
+                t1.join()
+                t2.join()
+            else:
+                client_sock.sendall(response)
+                client_sock.close()
+                upstream.close()
+        else:
+            header_end = request.find(b"\r\n\r\n")
+            headers_part = request[:header_end]
+            body_part = request[header_end:]
+            auth_header = f"Proxy-Authorization: Basic {auth}\r\n".encode()
+            first_line_end = headers_part.find(b"\r\n") + 2
+            modified_request = headers_part[:first_line_end] + auth_header + headers_part[first_line_end:] + body_part
+            upstream.sendall(modified_request)
+
+            t1 = threading.Thread(target=_pipe, args=(client_sock, upstream), daemon=True)
+            t2 = threading.Thread(target=_pipe, args=(upstream, client_sock), daemon=True)
+            t1.start()
+            t2.start()
+            t1.join()
+            t2.join()
+
+    except Exception:
+        try:
+            client_sock.close()
+        except Exception:
+            pass
+
+
+_proxy_server = None
+
+
+def start_local_proxy():
+    global _proxy_server
+    if _proxy_server is not None:
+        return _proxy_server
+
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", LOCAL_PROXY_PORT))
+    server.listen(50)
+
+    def accept_loop():
+        while True:
+            try:
+                client_sock, _ = server.accept()
+                t = threading.Thread(target=_handle_client, args=(client_sock,), daemon=True)
+                t.start()
+            except Exception:
+                break
+
+    thread = threading.Thread(target=accept_loop, daemon=True)
+    thread.start()
+    time.sleep(1)
+    logger.info(f"로컬 프록시 포워더 시작됨 (localhost:{LOCAL_PROXY_PORT} → {PROXY_HOST}:{PROXY_PORT})")
+    _proxy_server = server
+    return server
+
+
+# ==================== 크롤링 (undetected_chromedriver + 프록시) ====================
+def get_total_review_pages(driver, max_reviews):
+    try:
+        count_span = driver.find_element(By.CSS_SELECTOR, "span.count")
+        if count_span:
+            count_text = count_span.text.strip().replace(",", "")
+            match = re.search(r"(\d+)", count_text)
+            if match:
+                total_reviews = int(match.group(1))
+                original_reviews = total_reviews
+                total_reviews = min(total_reviews, max_reviews)
+                total_pages = math.ceil(total_reviews / 10)
+                logger.info(f"총 리뷰 수: {original_reviews}, 크롤링 대상: {total_reviews}, 페이지: {total_pages}")
+                return total_pages
+    except Exception as e:
+        logger.error(f"리뷰 수를 찾을 수 없습니다: {e}")
     return 0
 
 
-async def crawl_all_coupang_reviews(product_url, max_reviews=20):
+def crawl_all_coupang_reviews(product_url, max_reviews=20):
     all_reviews = []
     count = 0
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-gpu",
-                "--disable-software-rasterizer",
-                "--disable-extensions",
-            ],
-        )
-        context = await browser.new_context(
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        )
-        page = await context.new_page()
+    # Xvfb & 프록시 시작
+    xvfb_proc = setup_xvfb()
+    start_local_proxy()
 
-        await page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        """)
+    logger.info("Chrome 브라우저 시작 중 (undetected-chromedriver + Proxy)...")
+    options = uc.ChromeOptions()
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument(f"--proxy-server=http://127.0.0.1:{LOCAL_PROXY_PORT}")
+    options.add_argument("--lang=ko-KR")
 
-        await page.goto(product_url)
-        await page.wait_for_timeout(2000)
+    driver = uc.Chrome(options=options, headless=False, version_main=144)
 
+    try:
+        # 쿠팡 메인 페이지 먼저 방문 (쿠키 획득)
+        logger.info("쿠팡 메인 페이지 방문 중 (쿠키 획득)...")
+        driver.get("https://www.coupang.com")
+        time.sleep(5)
+        logger.info(f"메인 페이지 타이틀: {driver.title}")
+
+        # 상품 페이지 접속
+        logger.info(f"페이지 접속 시도: {product_url}")
+        driver.get(product_url)
+        time.sleep(5)
+
+        logger.info(f"페이지 타이틀: {driver.title}")
+
+        # Access Denied 체크
+        if "Access Denied" in driver.title:
+            logger.error("Access Denied - 페이지 접근이 차단되었습니다")
+            return []
+
+        # 리뷰 섹션 찾기
         try:
-            await page.get_by_role("button", name="베스트순").click()
-            await page.wait_for_timeout(2000)
+            review_section = WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.ID, "sdpReview"))
+            )
         except Exception:
-            logger.warning("베스트순 버튼 클릭 실패 또는 이미 적용됨")
+            logger.error("리뷰 섹션을 찾을 수 없습니다")
+            return []
 
-        num_pages = await get_total_review_pages(page, max_reviews)
+        driver.execute_script("arguments[0].scrollIntoView();", review_section)
+        logger.info("리뷰 섹션 발견")
+        time.sleep(1)
+
+        # 베스트순 정렬
+        try:
+            best_btn = driver.find_element(By.XPATH, "//button[contains(text(), '베스트순')]")
+            if best_btn:
+                best_btn.click()
+                time.sleep(1)
+                logger.info("베스트순 정렬 적용됨")
+        except Exception:
+            pass
+
+        num_pages = get_total_review_pages(driver, max_reviews)
+
+        if num_pages == 0:
+            logger.error("페이지 수가 0입니다.")
+            return []
 
         for page_num in range(1, num_pages + 1):
             logger.info(f"{page_num}/{num_pages} 페이지 크롤링 중")
 
             if page_num != 1:
                 try:
-                    btn = page.locator("#sdpReview").locator(
-                        f"button:has(span:text-is('{page_num}'))"
-                    ).first
-                    await btn.scroll_into_view_if_needed()
-                    await btn.wait_for(state="visible", timeout=5000)
-                    await btn.click()
-                    await page.wait_for_timeout(500)
+                    page_btn = driver.find_element(
+                        By.XPATH, f"//*[@id='sdpReview']//button[span[text()='{page_num}']]"
+                    )
+                    driver.execute_script("arguments[0].scrollIntoView();", page_btn)
+                    time.sleep(0.2)
+                    page_btn.click()
+                    time.sleep(0.5)
                 except Exception as e:
                     logger.warning(f"페이지 {page_num} 클릭 실패: {e}")
                     continue
 
-            await page.wait_for_selector("#sdpReview", timeout=10000)
-            await page.wait_for_selector("#sdpReview article", timeout=10000)
+            reviews = driver.find_elements(By.CSS_SELECTOR, "#sdpReview article")
 
-            reviews_locator = page.locator("#sdpReview article")
-            n = await reviews_locator.count()
+            for review in reviews:
+                try:
+                    try:
+                        product_el = review.find_element(By.CSS_SELECTOR, "div[class*='twc-line-clamp']")
+                        product_name = product_el.text.strip()
+                    except Exception:
+                        product_name = ""
 
-            for i in range(n):
-                review = reviews_locator.nth(i)
+                    full_text = review.text or ""
 
-                author_loc = review.locator("span[data-member-id]")
-                author = (await author_loc.first.inner_text()).strip() if await author_loc.count() > 0 else "Unknown"
+                    if product_name and product_name in full_text:
+                        idx = full_text.find(product_name) + len(product_name)
+                        review_text = full_text[idx:].strip()
 
-                date_loc = review.locator("div.twc-text-\\[14px\\]\\/\\[15px\\]")
-                date = (await date_loc.first.inner_text()).strip() if await date_loc.count() > 0 else ""
+                        for suffix in ["도움이 돼요신고하기", "신고하기", "도움이 돼요"]:
+                            if review_text.endswith(suffix):
+                                review_text = review_text[:-len(suffix)].strip()
 
-                product_loc = review.locator("div[class*='twc-line-clamp']")
-                product_name = (await product_loc.first.inner_text()).strip() if await product_loc.count() > 0 else "Unknown"
+                        if "맛 만족도" in review_text:
+                            review_text = review_text[:review_text.find("맛 만족도")].strip()
+                    else:
+                        review_text = ""
 
-                full_text = (await review.text_content()) or ""
-
-                if product_name and product_name in full_text:
-                    idx = full_text.find(product_name) + len(product_name)
-                    review_text = full_text[idx:].strip()
-
-                    for suffix in ["도움이 돼요신고하기", "신고하기", "도움이 돼요"]:
-                        if review_text.endswith(suffix):
-                            review_text = review_text[: -len(suffix)].strip()
-
-                    if "맛 만족도" in review_text:
-                        review_text = review_text[: review_text.find("맛 만족도")].strip()
-                else:
-                    review_text = ""
-
-                if review_text:
-                    all_reviews.append({
-                        "author": author,
-                        "date": date,
-                        "product": product_name,
-                        "content": review_text,
-                    })
-                    count += 1
+                    if review_text and len(review_text) > 5:
+                        all_reviews.append({
+                            "product": product_name,
+                            "content": review_text,
+                        })
+                        count += 1
+                except Exception:
+                    continue
 
         logger.info(f"크롤링 완료: {count}개 리뷰")
-        await context.close()
-        await browser.close()
+
+    except Exception as e:
+        logger.error(f"크롤링 중 오류: {e}")
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+        try:
+            xvfb_proc.terminate()
+        except Exception:
+            pass
 
     return all_reviews
 
@@ -668,10 +842,10 @@ async def crawl_all_coupang_reviews(product_url, max_reviews=20):
 async def background_pipeline(product_id: str, coupang_url: str, max_reviews: int):
     """등록 시 백그라운드로 실행되는 전체 파이프라인."""
     try:
-        # 1. 크롤링
+        # 1. 크롤링 (동기 함수 → asyncio.to_thread)
         set_status(product_id, "crawling")
         logger.info(f"[PIPELINE] 크롤링 시작: {product_id}")
-        reviews = await crawl_all_coupang_reviews(coupang_url, max_reviews)
+        reviews = await asyncio.to_thread(crawl_all_coupang_reviews, coupang_url, max_reviews)
 
         if not reviews:
             set_status(product_id, "error", message="리뷰를 찾을 수 없습니다")
@@ -790,7 +964,7 @@ async def crawl_reviews(request: Request):
         return {"error": "product_id is required"}
 
     product_url = f"https://www.coupang.com/vp/products/{product_id}"
-    reviews = await crawl_all_coupang_reviews(product_url, max_reviews)
+    reviews = await asyncio.to_thread(crawl_all_coupang_reviews, product_url, max_reviews)
 
     if not reviews:
         return {"error": "리뷰를 찾을 수 없습니다"}

@@ -6,3 +6,5 @@ google-cloud-aiplatform
 google-cloud-storage
 redis
 pandas
+undetected-chromedriver
+selenium
