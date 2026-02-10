@@ -233,49 +233,60 @@ def analyze_with_vertex(product_name: str, review_texts: list[str]) -> dict:
 {combined}
 """
 
-    response = model.generate_content(
-        prompt,
-        generation_config={
-            "temperature": 0.3,
-            "max_output_tokens": 8192,
-            "response_mime_type": "application/json",
-        },
-    )
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = model.generate_content(
+                prompt,
+                generation_config={
+                    "temperature": 0.3,
+                    "max_output_tokens": 16384,
+                    "response_mime_type": "application/json",
+                },
+            )
 
-    raw_text = response.text.strip()
+            raw_text = response.text.strip()
 
-    # JSON 파싱 (여러 방법 시도)
-    analysis = None
+            # JSON 파싱 (여러 방법 시도)
+            analysis = None
 
-    # 1차: 그대로 파싱
-    try:
-        analysis = json.loads(raw_text)
-    except json.JSONDecodeError:
-        pass
-
-    # 2차: ```json ... ``` 블록 추출 후 파싱
-    if analysis is None:
-        json_match = re.search(r"```json\s*([\s\S]*?)```", raw_text)
-        if json_match:
+            # 1차: 그대로 파싱
             try:
-                analysis = json.loads(json_match.group(1))
+                analysis = json.loads(raw_text)
             except json.JSONDecodeError:
                 pass
 
-    # 3차: { } 블록 추출 후 파싱
-    if analysis is None:
-        json_match = re.search(r"\{[\s\S]*\}", raw_text)
-        if json_match:
-            try:
-                analysis = json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
+            # 2차: ```json ... ``` 블록 추출 후 파싱
+            if analysis is None:
+                json_match = re.search(r"```json\s*([\s\S]*?)```", raw_text)
+                if json_match:
+                    try:
+                        analysis = json.loads(json_match.group(1))
+                    except json.JSONDecodeError:
+                        pass
 
-    if analysis is None:
-        raise ValueError(f"Gemini 응답에서 JSON을 파싱할 수 없습니다: {raw_text[:300]}")
+            # 3차: { } 블록 추출 후 파싱
+            if analysis is None:
+                json_match = re.search(r"\{[\s\S]*\}", raw_text)
+                if json_match:
+                    try:
+                        analysis = json.loads(json_match.group())
+                    except json.JSONDecodeError:
+                        pass
 
-    logger.info("Vertex AI 분석 완료")
-    return analysis
+            if analysis is not None:
+                logger.info("Vertex AI 분석 완료")
+                return analysis
+
+            logger.warning(f"[시도 {attempt}/{max_retries}] JSON 파싱 실패: {raw_text[:200]}")
+
+        except Exception as e:
+            logger.warning(f"[시도 {attempt}/{max_retries}] Gemini 호출 실패: {e}")
+
+        if attempt < max_retries:
+            time.sleep(3)
+
+    raise ValueError("Gemini 응답에서 JSON을 파싱할 수 없습니다 (3회 시도 실패)")
 
 
 # ==================== 대시보드 HTML 생성 ====================
