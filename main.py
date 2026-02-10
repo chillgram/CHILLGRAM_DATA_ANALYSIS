@@ -1015,7 +1015,7 @@ def get_total_review_pages(driver, max_reviews):
     return 0
 
 
-def crawl_all_coupang_reviews(product_url, max_reviews=20):
+def crawl_all_coupang_reviews(product_url, max_reviews=1000):
     all_reviews = []
     count = 0
 
@@ -1210,7 +1210,7 @@ async def register_product(request: Request, background_tasks: BackgroundTasks):
     """쿠팡 URL을 등록하고 비동기로 크롤링+분석+PDF 생성을 시작합니다."""
     body = await request.json()
     coupang_url = body.get("coupang_url", "")
-    max_reviews = body.get("max_reviews", 100)
+    max_reviews = body.get("max_reviews", 1000)
 
     product_id = extract_product_id(coupang_url)
     if not product_id:
@@ -1346,7 +1346,7 @@ async def crawl_reviews(request: Request):
     """기존 호환용 크롤링 전용 엔드포인트."""
     body = await request.json()
     product_id = body.get("product_id")
-    max_reviews = body.get("max_reviews", 20)
+    max_reviews = body.get("max_reviews", 1000)
 
     if not product_id:
         return {"error": "product_id is required"}
