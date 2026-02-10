@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 import os
+import random
 import socket
 import threading
 import base64
@@ -226,7 +227,11 @@ def analyze_with_vertex(product_name: str, review_texts: list[str]) -> dict:
     "immediate_improvements": ["항목1", "항목2"],
     "marketing_messages": ["메시지1", "메시지2"],
     "competitive_advantages": ["강점1", "강점2"]
-  }}
+  }},
+  "monthly_sentiment_trend": [
+    {{"month": "2025-01", "positive": 70, "neutral": 20, "negative": 10}},
+    {{"month": "2025-02", "positive": 65, "neutral": 25, "negative": 10}}
+  ]
 }}
 
 ## 리뷰 데이터
@@ -340,6 +345,30 @@ def generate_dashboard_html(analysis: dict) -> str:
     review_count = len(pos_reviews) + len(neg_reviews)
     total_keywords = sum(pos_kw_freq) + sum(neg_kw_freq)
 
+    # 월별 감성 트렌드 데이터
+    monthly_trend = analysis.get("monthly_sentiment_trend", [])
+    trend_months = [t.get("month", "") for t in monthly_trend]
+    trend_pos = [t.get("positive", 0) for t in monthly_trend]
+    trend_neu = [t.get("neutral", 0) for t in monthly_trend]
+    trend_neg = [t.get("negative", 0) for t in monthly_trend]
+
+    # 워드클라우드 HTML 생성 (긍정 + 부정 키워드 합쳐서)
+    wc_words = []
+    all_freq = pos_kw_freq + neg_kw_freq
+    max_freq = max(all_freq) if all_freq else 1
+    pos_colors = ["#10B981", "#34D399", "#6EE7B7", "#A7F3D0"]
+    neg_colors = ["#EF4444", "#F87171", "#FCA5A5", "#FECACA"]
+    for name, freq in zip(pos_kw_names, pos_kw_freq):
+        size = max(0.75, min(2.2, 0.75 + (freq / max_freq) * 1.45))
+        color = random.choice(pos_colors)
+        wc_words.append(f'<span class="wc-word" style="font-size:{size:.2f}rem;color:{color};opacity:{0.7 + 0.3 * freq / max_freq:.2f}">{name}</span>')
+    for name, freq in zip(neg_kw_names, neg_kw_freq):
+        size = max(0.75, min(2.2, 0.75 + (freq / max_freq) * 1.45))
+        color = random.choice(neg_colors)
+        wc_words.append(f'<span class="wc-word" style="font-size:{size:.2f}rem;color:{color};opacity:{0.7 + 0.3 * freq / max_freq:.2f}">{name}</span>')
+    random.shuffle(wc_words)
+    wordcloud_html = "\n".join(wc_words)
+
     html = f"""<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -354,13 +383,19 @@ def generate_dashboard_html(analysis: dict) -> str:
         html, body {{
             font-family: 'Noto Sans KR', sans-serif;
             background: #1a1a2e;
-            width: 1122px; height: 793px;
-            color: #fff; overflow: hidden;
+            width: 1122px;
+            color: #fff;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }}
-        body {{ padding: 20px 24px; }}
-        .container {{ width: 100%; height: 100%; display: flex; flex-direction: column; }}
+        .page {{
+            width: 1122px; height: 793px;
+            padding: 20px 24px;
+            overflow: hidden;
+            page-break-after: always;
+            display: flex; flex-direction: column;
+        }}
+        .page:last-child {{ page-break-after: avoid; }}
 
         /* 헤더 */
         .header {{ text-align: center; padding: 10px 0 8px; }}
@@ -433,10 +468,78 @@ def generate_dashboard_html(analysis: dict) -> str:
         .footer {{
             text-align: center; padding: 6px 0 0; color: #64748B; font-size: 0.6rem;
         }}
+
+        /* ===== PAGE 2 ===== */
+        .page2-header {{
+            text-align: center; padding: 10px 0 8px;
+            border-bottom: 2px solid rgba(99,102,241,0.3);
+            margin-bottom: 12px;
+        }}
+        .page2-header h1 {{
+            font-size: 1.3rem; font-weight: 700;
+            background: linear-gradient(90deg, #6366F1, #8B5CF6, #EC4899);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }}
+        .page2-header p {{ color: #94A3B8; font-size: 0.72rem; margin-top: 2px; }}
+
+        .page2-content {{
+            display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+            flex: 1; min-height: 0;
+        }}
+
+        /* 워드클라우드 */
+        .wordcloud-box {{
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px; padding: 14px;
+            display: flex; flex-direction: column;
+        }}
+        .section-label {{
+            font-size: 0.85rem; font-weight: 600; color: #E2E8F0;
+            margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+        }}
+        .wordcloud {{
+            flex: 1; display: flex; flex-wrap: wrap;
+            align-items: center; justify-content: center;
+            gap: 6px 10px; padding: 8px;
+        }}
+        .wc-word {{
+            display: inline-block; padding: 2px 6px;
+            border-radius: 4px; line-height: 1.3;
+            transition: opacity 0.2s;
+        }}
+
+        /* 시계열 트렌드 */
+        .trend-box {{
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px; padding: 14px;
+            display: flex; flex-direction: column;
+        }}
+        .trend-chart {{ flex: 1; min-height: 0; }}
+
+        /* 하단 요약 카드 */
+        .page2-bottom {{
+            display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+            margin-top: 12px;
+        }}
+        .summary-card {{
+            background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.15);
+            border-radius: 10px; padding: 12px;
+        }}
+        .summary-card h3 {{
+            font-size: 0.78rem; font-weight: 600; color: #A5B4FC;
+            margin-bottom: 6px;
+        }}
+        blockquote {{
+            font-size: 0.7rem; color: #CBD5E1; line-height: 1.5;
+            padding: 4px 0 4px 10px; margin: 3px 0;
+            border-left: 2px solid rgba(99,102,241,0.4);
+            font-style: italic;
+        }}
     </style>
 </head>
 <body>
-<div class="container">
+<!-- ===== PAGE 1 ===== -->
+<div class="page">
     <div class="header">
         <h1>리뷰 분석 대시보드</h1>
         <p>BigQuery + Vertex AI Gemini 2.5 Flash 분석 결과</p>
@@ -480,7 +583,48 @@ def generate_dashboard_html(analysis: dict) -> str:
     </div>
 
     <div class="footer">
-        <p>CHILLGRAM Review Analysis &middot; Generated by Vertex AI</p>
+        <p>CHILLGRAM Review Analysis &middot; Page 1/2 &middot; Generated by Vertex AI</p>
+    </div>
+</div>
+
+<!-- ===== PAGE 2 ===== -->
+<div class="page">
+    <div class="page2-header">
+        <h1>심층 분석 리포트</h1>
+        <p>{product_name} &middot; 키워드 워드클라우드 &amp; 감성 트렌드</p>
+    </div>
+
+    <div class="page2-content">
+        <div class="wordcloud-box">
+            <div class="section-label">키워드 워드클라우드</div>
+            <div class="wordcloud">
+                {wordcloud_html}
+            </div>
+            <div style="text-align:center;font-size:0.6rem;color:#64748B;margin-top:4px;">
+                <span style="color:#10B981;">● 긍정</span> &nbsp;
+                <span style="color:#EF4444;">● 부정</span> &nbsp;
+                글자 크기 = 빈도수
+            </div>
+        </div>
+        <div class="trend-box">
+            <div class="section-label">월별 감성 트렌드</div>
+            <div class="trend-chart" id="trend-chart"></div>
+        </div>
+    </div>
+
+    <div class="page2-bottom">
+        <div class="summary-card">
+            <h3>대표 긍정 리뷰</h3>
+            {blockquote_items(pos_reviews[:3])}
+        </div>
+        <div class="summary-card">
+            <h3>대표 부정 리뷰</h3>
+            {blockquote_items(neg_reviews[:3])}
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>CHILLGRAM Review Analysis &middot; Page 2/2 &middot; Generated by Vertex AI</p>
     </div>
 </div>
 
@@ -527,6 +671,46 @@ Plotly.newPlot('neg-keywords', [{{
     xaxis: {{ showgrid: false, zeroline: false, showticklabels: false }},
     yaxis: {{ showgrid: false, tickfont: {{ size: 9 }} }},
     margin: {{ t: 5, b: 5, l: 55, r: 30 }}, bargap: 0.2
+}}, {{responsive: true, displayModeBar: false}});
+
+// 시계열 트렌드 차트
+Plotly.newPlot('trend-chart', [
+    {{
+        x: {json.dumps(trend_months)},
+        y: {json.dumps(trend_pos)},
+        name: '긍정', type: 'scatter', mode: 'lines+markers',
+        line: {{ color: '#10B981', width: 2.5 }},
+        marker: {{ size: 6, color: '#10B981' }},
+        fill: 'tozeroy', fillcolor: 'rgba(16,185,129,0.1)'
+    }},
+    {{
+        x: {json.dumps(trend_months)},
+        y: {json.dumps(trend_neu)},
+        name: '중립', type: 'scatter', mode: 'lines+markers',
+        line: {{ color: '#F59E0B', width: 2 }},
+        marker: {{ size: 5, color: '#F59E0B' }}
+    }},
+    {{
+        x: {json.dumps(trend_months)},
+        y: {json.dumps(trend_neg)},
+        name: '부정', type: 'scatter', mode: 'lines+markers',
+        line: {{ color: '#EF4444', width: 2 }},
+        marker: {{ size: 5, color: '#EF4444' }}
+    }}
+], {{
+    paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+    font: {{ color: '#CBD5E1', size: 10 }},
+    legend: {{ orientation: 'h', y: 1.08, x: 0.5, xanchor: 'center', font: {{ size: 10 }} }},
+    xaxis: {{
+        showgrid: false, color: '#64748B',
+        tickfont: {{ size: 9 }}, tickangle: -30
+    }},
+    yaxis: {{
+        showgrid: true, gridcolor: 'rgba(255,255,255,0.05)',
+        color: '#64748B', ticksuffix: '%', tickfont: {{ size: 9 }},
+        range: [0, 100]
+    }},
+    margin: {{ t: 30, b: 40, l: 40, r: 15 }}
 }}, {{responsive: true, displayModeBar: false}});
 </script>
 </body>
