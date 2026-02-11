@@ -1291,18 +1291,17 @@ async def analyze_product(request: Request):
         return {"status": "error", "message": "product_id가 필요합니다"}
 
     status_info = get_status(product_id)
-    if not status_info:
-        return {"status": "not_found", "message": "등록되지 않은 제품입니다"}
 
-    current_status = status_info.get("status", "")
-    if current_status != "done":
-        return {
-            "status": "processing",
-            "current_step": current_status,
-            "message": f"아직 처리 중입니다 (현재 단계: {current_status})",
-        }
+    if status_info:
+        current_status = status_info.get("status", "")
+        if current_status != "done":
+            return {
+                "status": "processing",
+                "current_step": current_status,
+                "message": f"아직 처리 중입니다 (현재 단계: {current_status})",
+            }
 
-    # GCS에서 PDF 가져오기
+    # GCS에서 PDF 가져오기 (캐시 없어도 GCS에 있으면 반환)
     pdf_bytes = await asyncio.to_thread(get_pdf_from_gcs, product_id)
     if not pdf_bytes:
         return {"status": "error", "message": "PDF 파일을 찾을 수 없습니다"}
