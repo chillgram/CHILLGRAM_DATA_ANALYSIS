@@ -1113,13 +1113,30 @@ def crawl_all_coupang_reviews(product_url, max_reviews=1000):
 
             if page_num != 1:
                 try:
-                    page_btn = driver.find_element(
+                    page_btns = driver.find_elements(
                         By.XPATH, f"//*[@id='sdpReview']//button[span[text()='{page_num}']]"
                     )
-                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", page_btn)
-                    time.sleep(0.5)
-                    driver.execute_script("arguments[0].click();", page_btn)
-                    time.sleep(0.5)
+                    if not page_btns:
+                        # "다음(>)" 버튼 클릭 — 페이지네이션 그룹 넘기기
+                        next_btn = driver.find_element(
+                            By.XPATH, "//*[@id='sdpReview']//button[.//svg/path[starts-with(@d,'M4.533')]]"
+                        )
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_btn)
+                        time.sleep(0.5)
+                        driver.execute_script("arguments[0].click();", next_btn)
+                        time.sleep(1)
+                        page_btns = driver.find_elements(
+                            By.XPATH, f"//*[@id='sdpReview']//button[span[text()='{page_num}']]"
+                        )
+
+                    if page_btns:
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", page_btns[0])
+                        time.sleep(0.5)
+                        driver.execute_script("arguments[0].click();", page_btns[0])
+                        time.sleep(0.5)
+                    else:
+                        logger.warning(f"페이지 {page_num} 버튼을 찾을 수 없어 종료")
+                        break
                 except Exception as e:
                     logger.warning(f"페이지 {page_num} 클릭 실패: {e}")
                     continue
