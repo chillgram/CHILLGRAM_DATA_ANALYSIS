@@ -998,10 +998,11 @@ def start_local_proxy():
 
 # ==================== 크롤링 (undetected_chromedriver + 프록시) ====================
 def get_total_review_pages(driver, max_reviews):
-    try:
-        count_span = driver.find_element(By.CSS_SELECTOR, "span.count")
-        if count_span:
-            count_text = count_span.text.strip().replace(",", "")
+    selectors = ["span.count", "div.twc-text-cou-blue"]
+    for selector in selectors:
+        try:
+            el = driver.find_element(By.CSS_SELECTOR, selector)
+            count_text = el.text.strip().replace(",", "").replace("(", "").replace(")", "")
             match = re.search(r"(\d+)", count_text)
             if match:
                 total_reviews = int(match.group(1))
@@ -1010,8 +1011,9 @@ def get_total_review_pages(driver, max_reviews):
                 total_pages = math.ceil(total_reviews / 10)
                 logger.info(f"총 리뷰 수: {original_reviews}, 크롤링 대상: {total_reviews}, 페이지: {total_pages}")
                 return total_pages
-    except Exception as e:
-        logger.error(f"리뷰 수를 찾을 수 없습니다: {e}")
+        except Exception:
+            continue
+    logger.error("리뷰 수를 찾을 수 없습니다")
     return 0
 
 
