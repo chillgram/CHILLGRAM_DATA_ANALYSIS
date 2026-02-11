@@ -1290,20 +1290,22 @@ async def analyze_product(request: Request):
     if not product_id:
         return {"status": "error", "message": "product_id가 필요합니다"}
 
-    status_info = get_status(product_id)
-
-    if status_info:
-        current_status = status_info.get("status", "")
-        if current_status != "done":
-            return {
-                "status": "processing",
-                "current_step": current_status,
-                "message": f"아직 처리 중입니다 (현재 단계: {current_status})",
-            }
-
-    # GCS에서 PDF 가져오기 (캐시 없어도 GCS에 있으면 반환)
+    # GCS에서 PDF 먼저 확인 (캐시 상태와 무관하게)
     pdf_bytes = await asyncio.to_thread(get_pdf_from_gcs, product_id)
-    if not pdf_bytes:
+    if pdf_bytes:
+        # PDF가 있으면 바로 반환
+        pass
+    else:
+        # PDF가 없으면 상태 확인
+        status_info = get_status(product_id)
+        if status_info:
+            current_status = status_info.get("status", "")
+            if current_status in ("queued", "crawling", "saving", "analyzing", "generating_pdf"):
+                return {
+                    "status": "processing",
+                    "current_step": current_status,
+                    "message": f"아직 처리 중입니다 (현재 단계: {current_status})",
+                }
         return {"status": "error", "message": "PDF 파일을 찾을 수 없습니다"}
 
     return Response(
