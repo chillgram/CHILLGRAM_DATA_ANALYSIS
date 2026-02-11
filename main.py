@@ -1118,13 +1118,16 @@ def crawl_all_coupang_reviews(product_url, max_reviews=1000):
                     )
                     if not page_btns:
                         # "다음(>)" 버튼 클릭 — 페이지네이션 그룹 넘기기
-                        next_btn = driver.find_element(
-                            By.XPATH, "//*[@id='sdpReview']//button[.//svg/path[starts-with(@d,'M4.533')]]"
+                        # 페이지네이션 버튼 목록의 마지막 버튼이 "다음" 버튼
+                        nav_btns = driver.find_elements(
+                            By.CSS_SELECTOR, "#sdpReview button.twc-rounded-\\[50\\%\\]"
                         )
-                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_btn)
-                        time.sleep(0.5)
-                        driver.execute_script("arguments[0].click();", next_btn)
-                        time.sleep(1)
+                        if nav_btns:
+                            next_btn = nav_btns[-1]
+                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_btn)
+                            time.sleep(0.5)
+                            driver.execute_script("arguments[0].click();", next_btn)
+                            time.sleep(1)
                         page_btns = driver.find_elements(
                             By.XPATH, f"//*[@id='sdpReview']//button[span[text()='{page_num}']]"
                         )
