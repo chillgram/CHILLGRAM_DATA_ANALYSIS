@@ -1090,9 +1090,9 @@ def crawl_all_coupang_reviews(product_url, max_reviews=1000):
                     page_btn = driver.find_element(
                         By.XPATH, f"//*[@id='sdpReview']//button[span[text()='{page_num}']]"
                     )
-                    driver.execute_script("arguments[0].scrollIntoView();", page_btn)
-                    time.sleep(0.2)
-                    page_btn.click()
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", page_btn)
+                    time.sleep(0.5)
+                    driver.execute_script("arguments[0].click();", page_btn)
                     time.sleep(0.5)
                 except Exception as e:
                     logger.warning(f"페이지 {page_num} 클릭 실패: {e}")
