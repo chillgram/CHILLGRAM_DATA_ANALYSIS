@@ -998,23 +998,47 @@ def start_local_proxy():
 
 # ==================== 크롤링 (undetected_chromedriver + 프록시) ====================
 def get_total_review_pages(driver, max_reviews):
-    selectors = ["span.count", "div.twc-text-cou-blue"]
+    # 방법 1: 셀렉터로 리뷰 수 찾기
+    selectors = [
+        "#sdpReview span.count",
+        "#sdpReview div.twc-text-cou-blue",
+        "span.count",
+        "div.twc-text-cou-blue",
+    ]
     for selector in selectors:
         try:
-            el = driver.find_element(By.CSS_SELECTOR, selector)
-            count_text = el.text.strip().replace(",", "").replace("(", "").replace(")", "")
-            match = re.search(r"(\d+)", count_text)
-            if match:
-                total_reviews = int(match.group(1))
-                original_reviews = total_reviews
-                total_reviews = min(total_reviews, max_reviews)
-                total_pages = math.ceil(total_reviews / 10)
-                logger.info(f"총 리뷰 수: {original_reviews}, 크롤링 대상: {total_reviews}, 페이지: {total_pages}")
-                return total_pages
+            els = driver.find_elements(By.CSS_SELECTOR, selector)
+            for el in els:
+                count_text = el.text.strip().replace(",", "").replace("(", "").replace(")", "")
+                match = re.search(r"(\d+)", count_text)
+                if match and int(match.group(1)) > 0:
+                    total_reviews = int(match.group(1))
+                    original_reviews = total_reviews
+                    total_reviews = min(total_reviews, max_reviews)
+                    total_pages = math.ceil(total_reviews / 10)
+                    logger.info(f"총 리뷰 수: {original_reviews}, 크롤링 대상: {total_reviews}, 페이지: {total_pages}")
+                    return total_pages
         except Exception:
             continue
-    logger.error("리뷰 수를 찾을 수 없습니다")
-    return 0
+
+    # 방법 2: 페이지 전체 텍스트에서 괄호 안 숫자 찾기
+    try:
+        review_section = driver.find_element(By.ID, "sdpReview")
+        section_text = review_section.text
+        match = re.search(r"\((\d[\d,]*)\)", section_text)
+        if match:
+            total_reviews = int(match.group(1).replace(",", ""))
+            total_reviews = min(total_reviews, max_reviews)
+            total_pages = math.ceil(total_reviews / 10)
+            logger.info(f"총 리뷰 수 (텍스트 추출): {total_reviews}, 페이지: {total_pages}")
+            return total_pages
+    except Exception:
+        pass
+
+    # fallback: max_reviews 기준으로 시도
+    fallback_pages = math.ceil(max_reviews / 10)
+    logger.warning(f"리뷰 수를 찾을 수 없어 fallback: {fallback_pages}페이지 시도")
+    return fallback_pages
 
 
 def crawl_all_coupang_reviews(product_url, max_reviews=1000):
